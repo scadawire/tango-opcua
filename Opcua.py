@@ -17,6 +17,8 @@ class Opcua(Device, metaclass=DeviceMeta):
     port = device_property(dtype=int, default_value=4840)
     init_subscribe = device_property(dtype=str, default_value="")
     init_dynamic_attributes = device_property(dtype=str, default_value="")
+    username = device_property(dtype=str, default_value="")
+    password = device_property(dtype=str, default_value="")
     client = 0
     dynamicAttributes = {}
 
@@ -93,11 +95,12 @@ class Opcua(Device, metaclass=DeviceMeta):
         self.set_state(DevState.INIT)
         self.get_device_properties(self.get_device_class())
         connectionString = "opc.tcp://" + self.host + ":" + str(self.port) + "/" + self.path
-        self.client = Client(connectionString)
-        # TODO
-        # client.set_user(username)
-        # client.set_password(password)
         self.info_stream("Connecting to " + connectionString)
+        self.client = Client(connectionString)
+        if self.username != "":
+            client.set_user(self.username)
+        if self.password != "":
+            client.set_password(password)
         if self.init_dynamic_attributes != "":
             attributes = self.init_dynamic_attributes.split(",")
             for attribute in attributes:

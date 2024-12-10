@@ -97,10 +97,8 @@ class Opcua(Device, metaclass=DeviceMeta):
         connectionString = "opc.tcp://" + self.host + ":" + str(self.port) + "/" + self.path
         self.info_stream("Connecting to " + connectionString)
         self.client = Client(connectionString)
-        if self.username != "":
-            client.set_user(self.username)
-        if self.password != "":
-            client.set_password(password)
+        if self.username != "": self.client.set_user(self.username)
+        if self.password != "": self.client.set_password(self.password)
         if self.init_dynamic_attributes != "":
             attributes = self.init_dynamic_attributes.split(",")
             for attribute in attributes:

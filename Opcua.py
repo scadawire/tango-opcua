@@ -32,6 +32,7 @@ class Opcua(Device, metaclass=DeviceMeta):
         for key in self.dynamicAttributes:
             self.subscribe(key)
 
+    # called by native opcua subscribe callback
     def datachange_notification(self, node, val, data):
         topic = node.nodeid.to_string()
         payload = val
@@ -43,14 +44,6 @@ class Opcua(Device, metaclass=DeviceMeta):
 
     def event_notification(self, event):
         print("Python: New event", event)
-    
-    # TODO: need to be implemented above...
-    #def on_message(self, client, userdata, msg):
-    #    self.info_stream("Received message: " + msg.topic+" "+str(msg.payload))
-    #    if not msg.topic in self.dynamicAttributes:
-    #        self.add_dynamic_attribute(msg.topic)
-    #    self.dynamicAttributes[msg.topic] = msg.payload
-    #    self.push_change_event(msg.topic, msg.payload)
 
     @command(dtype_in=str)
     def add_dynamic_attribute(self, topic):

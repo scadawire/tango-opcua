@@ -34,13 +34,14 @@ class Opcua(Device, metaclass=DeviceMeta):
 
     # called by native opcua subscribe callback
     def datachange_notification(self, node, val, data):
-        topic = node.nodeid.to_string()
-        payload = val
-        self.info_stream("Received message: " + topic +" "+str(payload))
-        if not topic in self.dynamicAttributes:
-            self.add_dynamic_attribute(topic)
-        self.dynamicAttributes[topic] = str(payload)
-        self.push_change_event(topic, str(payload))
+        name = node.nodeid.to_string()
+        value = str(val)
+        self.info_stream("Received message: " + name +" "+value)
+        if not name in self.dynamicAttributes:
+            self.add_dynamic_attribute(name)
+        if(self.dynamicAttributes[name] != value):
+            self.dynamicAttributes[name] = value
+            self.push_change_event(name, value)
 
     def event_notification(self, event):
         print("Python: New event", event)

@@ -48,7 +48,7 @@ class Opcua(Device, metaclass=DeviceMeta):
     # called by native opcua subscribe callback
     def datachange_notification(self, node, val, data):
         name = node.nodeid.to_string()
-        self.info_stream("Received message: " + name + " " + str(val))
+        self.debug_stream("Received message: %s %s", name, val)
         if name not in self.dynamicAttributes:
             self.add_dynamic_attribute(name)
         if self.dynamicAttributes[name]["value"] != val:
@@ -56,7 +56,7 @@ class Opcua(Device, metaclass=DeviceMeta):
             self.push_change_event(name, self.valueToTypeValue(name, val))
 
     def event_notification(self, event):
-        self.info_stream("New event " + str(event))
+        self.debug_stream("New event %s", event)
 
     @command(dtype_in=str)
     def add_dynamic_attribute(self, topic,
@@ -65,7 +65,7 @@ class Opcua(Device, metaclass=DeviceMeta):
             min_warning="", max_warning="", data_format_name=""):
         if topic == "": return
         if topic in self.dynamicAttributes:
-            self.info_stream("Dynamic attribute already exists: " + topic)
+            self.info_stream("Dynamic attribute already exists: %s", topic)
             return
         # the server knows the node type, so use it whenever none was configured
         if variable_type_name == "":
@@ -97,7 +97,7 @@ class Opcua(Device, metaclass=DeviceMeta):
             "dataFormat": dataFormat,
             "value": None,
         }
-        self.info_stream("added dynamic attribute " + topic)
+        self.info_stream("added dynamic attribute %s", topic)
 
     def stringValueToVarType(self, variable_type_name) -> CmdArgType:
         mapping = {
@@ -153,7 +153,7 @@ class Opcua(Device, metaclass=DeviceMeta):
         try:
             return self.variantTypeToVarTypeName(self.nodeVariantType(topic))
         except Exception as e:
-            self.warn_stream("Failed to resolve node type of " + topic + ", assuming DevString: " + str(e))
+            self.warn_stream("Failed to resolve node type of %s, assuming DevString: %s", topic, str(e))
             return "DevString"
 
     def nodeVariantType(self, topic):
@@ -231,8 +231,8 @@ class Opcua(Device, metaclass=DeviceMeta):
                 value = self.client.get_node(name).get_value()
                 self.dynamicAttributes[name]["value"] = value
             except Exception as e:
-                self.error_stream("Failed to read node " + name + ": " + str(e))
-        self.debug_stream("read value " + str(name) + ": " + str(value))
+                self.error_stream("Failed to read node %s: %s", name, str(e))
+        self.debug_stream("read value %s: %s", name, value)
         attr.set_value(self.valueToTypeValue(name, value))
 
     def write_dynamic_attr(self, attr):
@@ -252,7 +252,7 @@ class Opcua(Device, metaclass=DeviceMeta):
         try:
             variant_type = node.get_data_type_as_variant_type()
         except Exception as e:
-            self.warn_stream("Failed to resolve node type of " + topic + ": " + str(e))
+            self.warn_stream("Failed to resolve node type of %s: %s", topic, str(e))
         if variant_type is None:
             node.set_value(value)
             return value
@@ -262,7 +262,7 @@ class Opcua(Device, metaclass=DeviceMeta):
 
     @command(dtype_in=str)
     def subscribe(self, topic):
-        self.info_stream("Subscribe to topic " + str(topic))
+        self.info_stream("Subscribe to topic %s", topic)
         if self.subscription is None:
             self.subscription = self.client.create_subscription(self.subscribe_period_ms, self)
         self.subscription.subscribe_data_change(self.client.get_node(topic))
@@ -270,7 +270,7 @@ class Opcua(Device, metaclass=DeviceMeta):
     @command(dtype_in=[str])
     def publish(self, args):
         topic, value = args
-        self.info_stream("Publish topic " + str(topic) + ": " + str(value))
+        self.debug_stream("Publish topic %s: %s", topic, value)
         self.write_node(topic, value)
 
     def reconnect(self):
@@ -282,7 +282,7 @@ class Opcua(Device, metaclass=DeviceMeta):
         self.set_state(DevState.INIT)
         self.get_device_properties(self.get_device_class())
         connectionString = "opc.tcp://" + self.host + ":" + str(self.port) + "/" + self.path
-        self.info_stream("Connecting to " + connectionString)
+        self.info_stream("Connecting to %s", connectionString)
         self.client = Client(connectionString)
         if self.username != "": self.client.set_user(self.username)
         if self.password != "": self.client.set_password(self.password)
@@ -290,7 +290,7 @@ class Opcua(Device, metaclass=DeviceMeta):
         try:
             self.client.connect()
         except Exception as e:
-            self.error_stream("Failed to connect to " + connectionString + ": " + str(e))
+            self.error_stream("Failed to connect to %s: %s", connectionString, str(e))
             self.set_state(DevState.FAULT)
 
         if self.init_dynamic_attributes != "":
@@ -307,12 +307,12 @@ class Opcua(Device, metaclass=DeviceMeta):
             except JSONDecodeError:
                 attributes = self.init_dynamic_attributes.split(",")
                 for attribute in attributes:
-                    self.info_stream("Init dynamic attribute: " + str(attribute.strip()))
+                    self.info_stream("Init dynamic attribute: %s", str(attribute.strip()))
                     self.add_dynamic_attribute(attribute.strip())
         if self.init_subscribe != "":
             init_subscribes = self.init_subscribe.split(",")
             for init_subscribe in init_subscribes:
-                self.info_stream("Init subscribe: " + str(init_subscribe.strip()))
+                self.info_stream("Init subscribe: %s", str(init_subscribe.strip()))
                 self.add_dynamic_attribute(init_subscribe.strip())
 
         if self.get_state() != DevState.FAULT:

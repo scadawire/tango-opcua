@@ -46,10 +46,12 @@ class State:
         self.max_dim_x = 256
         self.max_dim_y = 256
 
-    def info_stream(self, msg): pass
-    def debug_stream(self, msg): pass
-    def warn_stream(self, msg): pass
-    def error_stream(self, msg): pass
+    # mirror pytango: the message is rendered as `msg % args`, so a format
+    # mismatch (a stray % in the payload) raises here just as it would live
+    def info_stream(self, msg, *args): msg % args
+    def debug_stream(self, msg, *args): msg % args
+    def warn_stream(self, msg, *args): msg % args
+    def error_stream(self, msg, *args): msg % args
     def push_change_event(self, name, value): pass
 
     def __getattr__(self, name):

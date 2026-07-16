@@ -11,6 +11,7 @@ from tango.server import Device, attribute, command, DeviceMeta
 from tango.server import class_property, device_property
 from tango.server import run
 from opcua import Client, ua
+from threading import Thread, RLock, Event
 
 class Opcua(Device, metaclass=DeviceMeta):
 
@@ -24,9 +25,16 @@ class Opcua(Device, metaclass=DeviceMeta):
     subscribe_period_ms = device_property(dtype=int, default_value=500)
     max_dim_x = device_property(dtype=int, default_value=256)
     max_dim_y = device_property(dtype=int, default_value=256)
+    health_check_interval = device_property(dtype=float, default_value=2.0)
     client = 0
     subscription = None
     dynamicAttributes = {}
+    # a reconnect swaps out the client and subscription under the tango request threads, so their
+    # node access and the reconnect must not run at the same time (reentrant: on_connect re-enters
+    # it through subscribe while a reconnect already holds it)
+    client_lock = RLock()
+    _health_thread = None
+    _health_stop = None
 
     INTEGER_VARIANT_TYPES = (
         ua.VariantType.SByte, ua.VariantType.Byte,
@@ -228,7 +236,8 @@ class Opcua(Device, metaclass=DeviceMeta):
         if value is None:
             # no subscription update received yet, read the node directly
             try:
-                value = self.client.get_node(name).get_value()
+                with self.client_lock:
+                    value = self.client.get_node(name).get_value()
                 self.dynamicAttributes[name]["value"] = value
             except Exception as e:
                 self.error_stream("Failed to read node %s: %s", name, str(e))
@@ -247,25 +256,27 @@ class Opcua(Device, metaclass=DeviceMeta):
         self.push_change_event(name, self.valueToTypeValue(name, written))
 
     def write_node(self, topic, value):
-        node = self.client.get_node(topic)
-        variant_type = None
-        try:
-            variant_type = node.get_data_type_as_variant_type()
-        except Exception as e:
-            self.warn_stream("Failed to resolve node type of %s: %s", topic, str(e))
-        if variant_type is None:
-            node.set_value(value)
+        with self.client_lock:
+            node = self.client.get_node(topic)
+            variant_type = None
+            try:
+                variant_type = node.get_data_type_as_variant_type()
+            except Exception as e:
+                self.warn_stream("Failed to resolve node type of %s: %s", topic, str(e))
+            if variant_type is None:
+                node.set_value(value)
+                return value
+            value = self.typeValueToNodeValue(value, variant_type)
+            node.set_value(value, variant_type)
             return value
-        value = self.typeValueToNodeValue(value, variant_type)
-        node.set_value(value, variant_type)
-        return value
 
     @command(dtype_in=str)
     def subscribe(self, topic):
         self.info_stream("Subscribe to topic %s", topic)
-        if self.subscription is None:
-            self.subscription = self.client.create_subscription(self.subscribe_period_ms, self)
-        self.subscription.subscribe_data_change(self.client.get_node(topic))
+        with self.client_lock:
+            if self.subscription is None:
+                self.subscription = self.client.create_subscription(self.subscribe_period_ms, self)
+            self.subscription.subscribe_data_change(self.client.get_node(topic))
 
     @command(dtype_in=[str])
     def publish(self, args):
@@ -274,9 +285,58 @@ class Opcua(Device, metaclass=DeviceMeta):
         self.write_node(topic, value)
 
     def reconnect(self):
-        self.subscription = None
-        self.client.connect()
-        self.on_connect()
+        with self.client_lock:
+            try:
+                self.client.disconnect()
+            except Exception as e:
+                self.debug_stream("disconnect before reconnect failed (expected on a dead link): %s", str(e))
+            self.subscription = None
+            self.client.connect()
+            self.on_connect()  # sets ON and re-subscribes on the fresh session
+
+    # python-opcua exposes no lost-connection callback: the server sends no notification when it
+    # dies, its keepalive thread reads the server-state node internally but surfaces nothing, and a
+    # broken link is not noticed until a request times out. So the session is watched actively by
+    # reading the standard server-state node (exactly what the library's own keepalive reads) - a
+    # last resort, only because the package gives no signal of its own. The server-side session dies
+    # with the server, so recovery needs a real reconnect (new session + re-subscribe), not just a
+    # probe that starts working again.
+    def health_probe(self):
+        with self.client_lock:
+            self.client.get_node(ua.FourByteNodeId(ua.ObjectIds.Server_ServerStatus_State)).get_value()
+
+    def health_loop(self):
+        healthy = True
+        while not self._health_stop.is_set():
+            self._health_stop.wait(self.health_check_interval)
+            if self._health_stop.is_set():
+                break
+            try:
+                self.health_probe()
+                healthy = True
+            except Exception as e:
+                if healthy:
+                    self.warn_stream("lost connection to the server: %s", str(e))
+                    self.set_state(DevState.FAULT)
+                    healthy = False
+                try:
+                    self.reconnect()
+                    healthy = True  # reconnect's on_connect has set ON again
+                except Exception as reconnectError:
+                    self.debug_stream("reconnect attempt failed: %s", str(reconnectError))
+
+    def start_health_monitor(self):
+        self._health_stop = Event()
+        self._health_thread = Thread(target=self.health_loop, daemon=True)
+        self._health_thread.start()
+
+    def delete_device(self):
+        if self._health_stop is not None:
+            self._health_stop.set()
+        try:
+            self.client.disconnect()
+        except Exception:
+            pass
 
     def init_device(self):
         self.set_state(DevState.INIT)
@@ -317,6 +377,7 @@ class Opcua(Device, metaclass=DeviceMeta):
 
         if self.get_state() != DevState.FAULT:
             self.on_connect()
+        self.start_health_monitor()
 
 if __name__ == "__main__":
     deviceServerName = os.getenv("DEVICE_SERVER_NAME")

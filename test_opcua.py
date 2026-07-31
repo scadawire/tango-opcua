@@ -212,10 +212,11 @@ def test_string_value_to_write_type():
         ("READ", AttrWriteType.READ),
         ("WRITE", AttrWriteType.WRITE),
         ("READ_WRITE", AttrWriteType.READ_WRITE),
-        ("READ_WITH_WRITE", AttrWriteType.READ_WITH_WRITE),
         ("", AttrWriteType.READ_WRITE),
     ]:
         assert_equal("writeType '%s'" % name, Opcua.stringValueToWriteType(s, name), expected)
+    # not offered: tango needs an associated write attribute for it, which no driver defines
+    assert_raises("writeType READ_WITH_WRITE rejected", Opcua.stringValueToWriteType, s, "READ_WITH_WRITE")
     assert_raises("writeType invalid", Opcua.stringValueToWriteType, s, "BOGUS")
 
 

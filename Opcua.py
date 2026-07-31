@@ -122,16 +122,19 @@ class Opcua(Device, metaclass=DeviceMeta):
         return mapping[variable_type_name]
 
     def stringValueToWriteType(self, write_type_name) -> AttrWriteType:
+        # READ_WITH_WRITE is not offered: tango only accepts it for an attribute that names an
+        # associated write attribute, which no driver here defines. Building the Attr anyway does
+        # not fail just that attribute, it aborts init_device with "Associated attribute not
+        # defined" and takes the whole device server down.
         mapping = {
             "READ": AttrWriteType.READ,
             "WRITE": AttrWriteType.WRITE,
             "READ_WRITE": AttrWriteType.READ_WRITE,
-            "READ_WITH_WRITE": AttrWriteType.READ_WITH_WRITE,
             "": AttrWriteType.READ_WRITE,
         }
         if write_type_name not in mapping:
             raise Exception("given write_type '" + write_type_name +
-                "' unsupported, supported are: READ, WRITE, READ_WRITE, READ_WITH_WRITE")
+                "' unsupported, supported are: READ, WRITE, READ_WRITE")
         return mapping[write_type_name]
 
     def stringValueToFormatType(self, format_type_name) -> AttrDataFormat:
